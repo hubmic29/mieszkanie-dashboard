@@ -5,14 +5,14 @@ from sqlalchemy import create_engine, text
 import streamlit as st
 import streamlit.components.v1 as components
 
-# 1. Konfiguracja strony (bez emotek)
+# 1. Konfiguracja strony
 st.set_page_config(
     page_title="Mieszkanie Babci — Panel Inwestycji",
     layout="centered",
     initial_sidebar_state="collapsed",
 )
 
-# 2. Ikony wektorowe SVG do wykorzystania w HTML
+# 2. Ikony wektorowe SVG
 SVG_HOME = '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>'
 SVG_WALLET = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></svg>'
 SVG_GAUGE = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>'
@@ -272,7 +272,7 @@ with engine.begin() as conn:
         )
     )
 
-# 5. Sesja logowania oraz nawigacji
+# 5. Sesja logowania oraz nawigacji (puste pola + loginy z sekretów lub domyślne)
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.role = None
@@ -289,12 +289,12 @@ if not st.session_state.logged_in:
         unsafe_allow_html=True,
     )
 
+    # Pobranie nazw loginów z pliku secrets.toml (lub użycie domyślnych "rodzina" i "admin")
+    valid_user_viewer = str(st.secrets.get("USER_RODZINA")).strip().lower()
+    valid_user_admin = str(st.secrets.get("USER_ADMIN")).strip().lower()
+
     with st.form("login_form"):
-        user = (
-            st.text_input("Identyfikator", placeholder="rodzina lub admin")
-            .strip()
-            .lower()
-        )
+        user = st.text_input("Login").strip().lower()
         pwd = st.text_input("Hasło", type="password")
         if st.form_submit_button(
             "Zaloguj się",
@@ -302,18 +302,18 @@ if not st.session_state.logged_in:
             use_container_width=True,
             type="primary",
         ):
-            if user == "rodzina" and pwd == st.secrets["PASS_RODZINA"]:
+            if user == valid_user_viewer and pwd == st.secrets["PASS_RODZINA"]:
                 st.session_state.logged_in = True
                 st.session_state.role = "viewer"
                 st.session_state.user_name = "Rodzina"
                 st.rerun()
-            elif user == "admin" and pwd == st.secrets["PASS_ADMIN"]:
+            elif user == valid_user_admin and pwd == st.secrets["PASS_ADMIN"]:
                 st.session_state.logged_in = True
                 st.session_state.role = "admin"
                 st.session_state.user_name = "Administrator"
                 st.rerun()
             else:
-                st.error("Nieprawidłowy identyfikator lub hasło.")
+                st.error("Nieprawidłowy login lub hasło.")
     st.stop()
 
 is_admin = st.session_state.role == "admin"
@@ -1028,7 +1028,7 @@ components.html(
             });
         });
     }
-    setTimeout(runGsapCounters, 150);
+    setTimeout(runGsapCounters, 80);
     </script>
     """,
     height=0,
