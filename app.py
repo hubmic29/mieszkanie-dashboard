@@ -1,4 +1,7 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+import hashlib
+import time
+import extra_streamlit_components as stx
 import pandas as pd
 import plotly.graph_objects as go
 from sqlalchemy import create_engine, text
@@ -272,14 +275,46 @@ with engine.begin() as conn:
         )
     )
 
-# 5. Sesja logowania oraz nawigacji (puste pola + loginy z sekretów lub domyślne)
+# 5. Obsługa ciasteczek (zapamiętywanie logowania na 30 dni) i sesji
+cookie_manager = stx.CookieManager(key="mieszkanie_cookies")
+
+valid_user_viewer = str(st.secrets.get("USER_RODZINA", "rodzina")).strip().lower()
+valid_user_admin = str(st.secrets.get("USER_ADMIN", "admin")).strip().lower()
+
+# Bezpieczne tokeny (hasło nie jest zapisywane jawnie w przeglądarce)
+token_viewer = hashlib.sha256(
+    f"{valid_user_viewer}_{st.secrets['PASS_RODZINA']}".encode()
+).hexdigest()
+token_admin = hashlib.sha256(
+    f"{valid_user_admin}_{st.secrets['PASS_ADMIN']}".encode()
+).hexdigest()
+
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.role = None
     st.session_state.user_name = None
 
+if "logout_clicked" not in st.session_state:
+    st.session_state.logout_clicked = False
+
 if "page" not in st.session_state:
     st.session_state.page = "dashboard"
+
+# Sprawdzenie czy w przeglądarce jest już ważne ciasteczko
+saved_token = cookie_manager.get(cookie="auth_token")
+if (
+    not st.session_state.logged_in
+    and not st.session_state.logout_clicked
+    and saved_token
+):
+    if saved_token == token_admin:
+        st.session_state.logged_in = True
+        st.session_state.role = "admin"
+        st.session_state.user_name = "Administrator"
+    elif saved_token == token_viewer:
+        st.session_state.logged_in = True
+        st.session_state.role = "viewer"
+        st.session_state.user_name = "Rodzina"
 
 if not st.session_state.logged_in:
     st.markdown(
@@ -289,13 +324,11 @@ if not st.session_state.logged_in:
         unsafe_allow_html=True,
     )
 
-    # Pobranie nazw loginów z pliku secrets.toml (lub użycie domyślnych "rodzina" i "admin")
-    valid_user_viewer = str(st.secrets.get("USER_RODZINA")).strip().lower()
-    valid_user_admin = str(st.secrets.get("USER_ADMIN")).strip().lower()
-
     with st.form("login_form"):
         user = st.text_input("Login").strip().lower()
         pwd = st.text_input("Hasło", type="password")
+        remember = st.checkbox("Zapamiętaj mnie na tym urządzeniu (30 dni)", value=True)
+
         if st.form_submit_button(
             "Zaloguj się",
             icon=":material/login:",
@@ -304,13 +337,29 @@ if not st.session_state.logged_in:
         ):
             if user == valid_user_viewer and pwd == st.secrets["PASS_RODZINA"]:
                 st.session_state.logged_in = True
+                st.session_state.logout_clicked = False
                 st.session_state.role = "viewer"
                 st.session_state.user_name = "Rodzina"
+                if remember:
+                    cookie_manager.set(
+                        "auth_token",
+                        token_viewer,
+                        expires_at=datetime.now() + timedelta(days=30),
+                    )
+                    time.sleep(0.3)
                 st.rerun()
             elif user == valid_user_admin and pwd == st.secrets["PASS_ADMIN"]:
                 st.session_state.logged_in = True
+                st.session_state.logout_clicked = False
                 st.session_state.role = "admin"
                 st.session_state.user_name = "Administrator"
+                if remember:
+                    cookie_manager.set(
+                        "auth_token",
+                        token_admin,
+                        expires_at=datetime.now() + timedelta(days=30),
+                    )
+                    time.sleep(0.3)
                 st.rerun()
             else:
                 st.error("Nieprawidłowy login lub hasło.")
@@ -371,7 +420,13 @@ with top1:
 
 with top2:
     if st.button("Wyloguj", icon=":material/logout:", use_container_width=True):
+        try:
+            cookie_manager.delete("auth_token")
+        except Exception:
+            pass
         st.session_state.logged_in = False
+        st.session_state.logout_clicked = True
+        time.sleep(0.3)
         st.rerun()
 
 # Przełącznik statusu wynajmu (Tylko Admin) + Przycisk nawigacji
@@ -464,7 +519,7 @@ TILES = [
     },
     {
         "key": "renovations",
-        "title": "Wydane na remonty",
+        "title": "Wydane na remonty od pierwszego wynajmu",
         "col_val": "total_renovations",
         "col_last": "last_renovation_add",
         "col_date": "last_renovation_date",
@@ -1018,7 +1073,7 @@ components.html(
             const obj = { val: 0 };
             gsap.to(obj, {
                 val: target,
-                duration: 3.5,
+                duration: 1.4,
                 ease: "power2.out",
                 onUpdate: function() {
                     const parts = obj.val.toFixed(decimals).split('.');
